@@ -1,0 +1,38 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Patient data and generated files
+storage/
+output/
+generated/
+
+# Spike outputs and sensitive test data
+spike/out/
+spike/review/
+spike/assets/
+spike/templates/
+templates/
+
+# Documents and exports
+*.pdf
+*.docx
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
