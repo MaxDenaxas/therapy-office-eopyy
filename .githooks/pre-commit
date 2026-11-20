@@ -1,0 +1,13 @@
+#!/bin/sh
+# Pre-commit safety check: blocks DOCX/PDF/database files, private directories,
+# .env files and AMKA-like numbers. Enable once per clone with:
+#   git config core.hooksPath .githooks
+root="$(git rev-parse --show-toplevel)"
+# Use the first interpreter that really runs (on Windows "python3" is often a Store stub).
+for py in python python3 py; do
+  if "$py" -c "import sys" >/dev/null 2>&1; then
+    exec "$py" "$root/tools/check_repo.py" --staged
+  fi
+done
+echo "pre-commit: no working Python found; cannot run the safety check. Commit blocked." >&2
+exit 1

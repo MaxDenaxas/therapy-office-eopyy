@@ -1,38 +1,66 @@
+# ---------------------------------------------------------------------------
+# Patterns starting with "/" are anchored to the repository root, so they can
+# never swallow a source folder that merely shares the name (e.g. a future
+# frontend/src/features/templates/).
+# ---------------------------------------------------------------------------
+
+# Private data: real templates, signatures, stamps, generated documents
+/templates/
+/storage/
+/data/
+/backups/
+/previews/
+/output/
+/generated/
+
+# Spike working data (the spike's *code* stays tracked)
+/spike/templates/
+/spike/assets/
+/spike/out/
+/spike/review/
+
+# Documents and databases: never committed, wherever they appear.
+# Test fixtures are built in code at test time, so none are needed in Git.
+*.docx
+*.docm
+*.dotx
+*.dotm
+*.pdf
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Local configuration and private denylist (see tools/check_repo.py)
+.env
+.env.*
+!.env.example
+/.private-denylist
+/.claude/settings.local.json
+
 # Python
 .venv/
 __pycache__/
 *.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
-# Environment variables
-.env
-.env.*
-!.env.example
+# Node / frontend build
+node_modules/
+/frontend/dist/
+/frontend/coverage/
+*.tsbuildinfo
 
-# Database
-*.db
-*.sqlite
-*.sqlite3
+# Scratch
+.scratch*/
 
-# Patient data and generated files
-storage/
-output/
-generated/
-
-# Spike outputs and sensitive test data
-spike/out/
-spike/review/
-spike/assets/
-spike/templates/
-templates/
-
-# Documents and exports
-*.pdf
-*.docx
-
-# IDE
+# IDE / OS
 .vscode/
 .idea/
-
-# OS
 .DS_Store
 Thumbs.db
