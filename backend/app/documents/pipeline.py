@@ -2,7 +2,7 @@
 
 render -> verify DOCX -> convert -> validate PDF. Any failure raises; nothing is
 returned unless every check passed. Files are written into ``workdir`` (e.g. a
-preview folder of the file store); issuing them is the caller's job (M8).
+preview folder of the file store); issuing them is the caller's job (M7).
 """
 
 from __future__ import annotations

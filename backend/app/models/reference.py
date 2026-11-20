@@ -23,7 +23,7 @@ class AdminAccount(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
     username: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
-    password_hash: Mapped[str] = mapped_column(Text, nullable=False)  # argon2id (M5)
+    password_hash: Mapped[str] = mapped_column(Text, nullable=False)  # Argon2id (M5.0)
     failed_login_count: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0")
     )

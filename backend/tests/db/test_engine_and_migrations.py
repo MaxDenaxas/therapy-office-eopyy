@@ -16,6 +16,7 @@ from app.models import Base
 
 EXPECTED_TABLES = {
     "admin_account",
+    "admin_sessions",  # 0003
     "audit_log",
     "center_settings",
     "document_templates",
@@ -70,6 +71,7 @@ EXPECTED_TRIGGERS = {
     "audit_log_no_update",
     "audit_log_no_delete",
     "center_settings_no_delete",
+    "admin_sessions_fixed",  # 0003
 }
 
 

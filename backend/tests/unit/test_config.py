@@ -36,3 +36,42 @@ def test_data_dir_inside_repository_is_refused():
 def test_default_data_dir_is_outside_any_repository():
     # the default must itself satisfy the rule it enforces
     Settings(data_dir=default_data_dir())
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1", "[::1]", "LOCALHOST"])
+def test_loopback_hosts_are_accepted(tmp_path, host):
+    assert Settings(data_dir=tmp_path, host=host).host in {"127.0.0.1", "localhost", "::1"}
+
+
+@pytest.mark.parametrize("host", ["0.0.0.0", "::", "192.168.1.10", "10.0.0.2", "office-pc", ""])
+def test_non_loopback_hosts_are_refused(tmp_path, host):
+    """Loopback only: LAN access needs a validated TLS setup, which does not exist yet."""
+    with pytest.raises(ValidationError, match="loopback"):
+        Settings(data_dir=tmp_path, host=host)
+
+
+def test_non_loopback_host_from_the_environment_refuses_startup(monkeypatch, tmp_path):
+    monkeypatch.setenv("THERAPY_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("THERAPY_HOST", "0.0.0.0")
+    from app import cli
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    with pytest.raises(ValidationError, match="loopback"):
+        cli.main(["serve"])
+
+
+def test_serve_binds_to_the_configured_loopback_address(monkeypatch, tmp_path):
+    monkeypatch.setenv("THERAPY_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("THERAPY_PORT", "8123")
+    calls = {}
+    import uvicorn
+
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kw: calls.update(app=app, **kw))
+    from app import cli
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    assert cli.main(["serve"]) == 0
+    assert calls["host"] == "127.0.0.1" and calls["port"] == 8123
+    assert calls["factory"] is True and calls["proxy_headers"] is False

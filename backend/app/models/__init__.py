@@ -1,5 +1,6 @@
 """SQLAlchemy models. Importing this package registers every table on ``Base.metadata``."""
 
+from .auth import AdminSession
 from .base import Base
 from .periods import AuditLog, GeneratedDocument, Period, PeriodTherapy, ScheduledSession
 from .prescriptions import Prescription, PrescriptionItem, ReferralPeriod, TherapistAssignment
@@ -15,6 +16,7 @@ from .templates import DocumentTemplate, TemplateConfigurationItem, TemplateVers
 
 __all__ = [
     "AdminAccount",
+    "AdminSession",
     "AuditLog",
     "Base",
     "CenterSettings",

@@ -1,6 +1,6 @@
 # Architecture
 
-Status: draft for review (2026-11-20). Requirements are referenced by ID from `PRODUCT_REQUIREMENTS.md`; decisions by ID from `DECISIONS.md`.
+Status: living document — updated 2026-11-20. Items marked open or awaiting review below are still unresolved. Requirements are referenced by ID from `PRODUCT_REQUIREMENTS.md`; decisions by ID from `DECISIONS.md`.
 
 ## 1. Overview
 
@@ -24,7 +24,7 @@ Browser (React) ──HTTP──▶ FastAPI ─┬─ services ─┬─ schedul
 | Documents | python-docx + lxml (ported from the spike) |
 | PDF | LibreOffice headless; pypdf for page-count/font checks in production (PyMuPDF only in dev/tests: AGPL) |
 | Holidays | `holidays` package (Greece, incl. Orthodox Easter), pinned, plus DB overrides |
-| Auth | One admin account, argon2id password hash, server-side session cookie |
+| Auth | One admin account (created by CLI only), Argon2id (`argon2-cffi`), server-side sessions stored as SHA-256 hashes, CSRF synchronizer token (§5.10) |
 | Frontend | React + TypeScript + Vite + Tailwind CSS (M0: React 19, Vite 8, Tailwind 4, TypeScript 7). TanStack Query and React Router are added in F1, when the first real screens need them. |
 | Tests | Backend: pytest (+ `httpx2` for the FastAPI test client), hypothesis for scheduler properties (M3). Frontend: Vitest + Testing Library. Lint: ruff (backend), `tsc --noEmit` (frontend). |
 
@@ -32,7 +32,7 @@ Not used: Redis, Docker, task queues, a separate PDF service, multi-tenant featu
 
 ## 3. Repository layout
 
-Status after M0: items marked *(M0)* exist; the rest arrive with their milestone.
+Status after M5.0: everything shown with an *(Mx)* tag exists (M0–M4 committed, M5.0 awaiting review); entries marked "later" or "future" do not exist yet. See `current-status.md`.
 
 ```
 therapy-office/
@@ -43,14 +43,16 @@ therapy-office/
 ├── .githooks/pre-commit     # runs the safety check; enable with `git config core.hooksPath .githooks` (M0)
 ├── backend/
 │   ├── pyproject.toml  .env.example                                   (M0)
-│   ├── alembic.ini  migrations/   # Alembic: env.py + versions/0001_initial_schema.py (M1)
+│   ├── alembic.ini  migrations/   # Alembic: env.py + versions/0001 (M1), 0002 (M3), 0003_admin_sessions (M5.0)
 │   ├── app/
 │   │   ├── main.py  config.py                                         (M0: app factory, THERAPY_* settings)
 │   │   ├── api/health.py                                              (M0)
-│   │   ├── db.py  migrate.py  cli.py                                  (M1: engine, migrations, `db` commands)
+│   │   ├── api/deps.py  api/auth.py                                   (M5.0: lazy database, request sessions; login/logout/session)
+│   │   ├── auth/                                                      (M5.0: passwords, service, dependencies)
+│   │   ├── security.py  errors.py                                     (M5.0: request filter + headers; privacy-safe errors)
+│   │   ├── db.py  migrate.py  cli.py                                  (M1: engine, migrations, `db` commands; M5.0: `admin`, `serve`)
 │   │   ├── models/                                                    (M1: SQLAlchemy models)
 │   │   ├── storage.py                                                 (M2: content-addressed, read-only file store)
-│   │   ├── security.py                                                # later
 │   │   ├── services/scheduling.py                                     (M3: propose / edit / status / approve / reopen)
 │   │   ├── services/templates.py                                      (M4: register / versions / activate / match)
 │   │   ├── schemas/                                                   # later
@@ -73,7 +75,8 @@ Conventions: integer primary keys; ISO dates; UTC timestamps; JSON as text with 
 
 | Table | Purpose | Key fields and constraints |
 |---|---|---|
-| `admin_account` | The single operator | `id = 1` (CHECK), username, password_hash, failed_login_count, locked_until, last_login_at |
+| `admin_account` | The single operator | `id = 1` (CHECK), username, password_hash (Argon2id), failed_login_count, locked_until, last_login_at; created only by the CLI, never seeded |
+| `admin_sessions` | Server-side login sessions (M5.0, migration `0003`) | admin_id → admin_account, `token_hash` (UNIQUE) and `csrf_hash` — SHA-256 hex (CHECK), never the tokens; created_at, last_seen_at, `expires_at` (absolute limit), revoked_at; trigger `admin_sessions_fixed`: only `last_seen_at` may change, and `revoked_at` once |
 | `patients` | Personal data entered once | first_name, last_name, father_name, `amka` UNIQUE (11 digits), notes, active |
 | `therapists` | Therapist data (no login) | full_name, specialty, license_no, license_authority, license_date, active |
 | `therapy_types` | Therapy catalogue | `code` UNIQUE, name_el, `eopyy_code` UNIQUE NULL (e.g. 530000010), `eopyy_description` (e.g. "ΑΓΩΓΗ ΛΟΓΟΥ - ΛΟΓΟΘΕΡΑΠΕΙΑ"), `template_label` (e.g. "Λογοθεραπεία:"), supports_home_visit |
@@ -148,7 +151,7 @@ Never edited in place: the old assignment gets `valid_to`, a new row is created;
 4. Correction: reopen the period (audited) → edit → new preview → version + 1.
 
 ### 5.7 Storage and integrity
-Content-addressed, read-only template files (`templates/<sha256>.docx`); issued files read-only with hashes in the DB; files served only through authenticated endpoints. 34 SQLite triggers (migration `0001`) block UPDATE/DELETE on template versions, issued documents and the audit log, edits to issued periods, overlapping or out-of-validity referral periods, changes to prescription data once used, mismatched period therapies, and inconsistent template activation. Every connection runs with `foreign_keys=ON`, WAL, `synchronous=FULL` and `BEGIN IMMEDIATE` (P-25). `python -m app.cli db check` runs `PRAGMA integrity_check`, `foreign_key_check` and a revision check (file re-hashing arrives with storage in M4/M8). `cli verify-integrity` re-hashes files and runs `PRAGMA integrity_check`.
+Content-addressed, read-only template files (`templates/<sha256>.docx`); issued files read-only with hashes in the DB; files served only through authenticated endpoints. 34 SQLite triggers (migration `0001`; three of them strengthened in `0002`) block UPDATE/DELETE on template versions, issued documents and the audit log, edits to issued periods, overlapping or out-of-validity referral periods, changes to prescription data once used, mismatched period therapies, and inconsistent template activation; `admin_sessions_fixed` (`0003`) keeps a session's identity fixed and its revocation final. Every connection runs with `foreign_keys=ON`, WAL, `synchronous=FULL` and `BEGIN IMMEDIATE` (P-25). `python -m app.cli db check` runs `PRAGMA integrity_check`, `foreign_key_check` and a revision check (file re-hashing arrives with storage in M4/M7). `cli verify-integrity` re-hashes files and runs `PRAGMA integrity_check`.
 
 ### 5.8 Repository safety (implemented in M0)
 - `.gitignore` uses root-anchored patterns (`/templates/`, `/storage/`, `/spike/templates/` …), so a source folder that merely shares a name (e.g. `frontend/src/features/templates/`) is never ignored by accident. `*.docx`, `*.pdf` and database files are ignored everywhere: test documents are built in code (`eopyy_builder.py`), so no document ever needs to be committed.
@@ -156,9 +159,19 @@ Content-addressed, read-only template files (`templates/<sha256>.docx`); issued 
 - The check is a safety net, not a substitute for care; it fails closed (no working Python → commit blocked).
 
 ### 5.9 Security and backups
-Bound to `127.0.0.1`; one password-protected admin; BitLocker on the host recommended; AMKA masked in lists; no personal data in logs. `cli backup` (SQLite online backup + file store, encrypted, retention) scheduled via Windows Task Scheduler; restore is documented and tested. Upload checks: `.docx` only, size limit, zip-bomb guard, no external entities.
+Bound to loopback only (enforced, §5.10); one password-protected admin; BitLocker on the host recommended; AMKA masked in lists; no personal data in logs. `cli backup` (SQLite online backup + file store, encrypted, retention) scheduled via Windows Task Scheduler; restore is documented and tested. Upload checks: `.docx` only, size limit, zip-bomb guard, no external entities.
 
-### 5.10 Future: prescription-text extraction (R-RX-6, not built)
+### 5.10 Authentication and API foundations (M5.0)
+- **Administrator:** exactly one account, created and re-passworded **only** by `python -m app.cli admin create | set-password` (no web setup route, no default credentials). Password policy: 12–128 characters after NFC normalisation, not equal to the username. Argon2id with argon2-cffi's RFC 9106 defaults; weaker stored hashes are upgraded at the next login. `set-password` clears the lock and revokes every session. `admin status` never prints the hash.
+- **Login** (`POST /api/auth/login`): one generic `401 invalid_credentials` for an unknown username, a wrong password or no administrator; an unknown username still costs one Argon2 verification. **Backoff** on the single account (whatever username was typed): from the 5th consecutive failure the login is locked for min(30 s × 2^(n−5), 15 min); while locked every attempt, even correct, gets `429 login_locked` + `Retry-After` without a hash check and without counting. Success resets the counter. A session presented with a *successful* login is revoked and replaced (no session fixation) — after the password was verified, in the same transaction, and *before* the session cap is enforced, so a re-login with 10 live sessions never evicts an unrelated one; a failed, locked or invalid login leaves it, and the browser's cookie, untouched.
+- **Sessions:** 256-bit random token in the `therapy_session` cookie (HttpOnly, SameSite=Strict, Path=/, no Domain, Max-Age 12 h, `Secure` automatically over HTTPS). Only SHA-256 hashes of the token and of the CSRF token are stored. A session is valid only if not revoked, **and** before `expires_at` (12 h after login), **and** less than 30 min after `last_seen_at` — the two limits are checked independently. Validation happens in a **read-only** transaction (it never waits for a writer); `last_seen_at` is then refreshed at most once a minute in a separate short write that waits at most 200 ms and is *skipped* — never failed — if the database is busy (all checks still apply). At most 10 live sessions (least recently used revoked). Revoked, expired and idle rows are deleted at login, logout and password change.
+- **CSRF and request filter** (`app/security.py`, every request): the TCP peer must be loopback (403); the Host header must be `127.0.0.1`, `localhost` or `[::1]` (400; DNS rebinding); unsafe methods need `Origin` equal to the request's own origin and a `Sec-Fetch-Site`, if sent, of `same-origin` (403); unsafe `/api` bodies must be JSON (415). Protected unsafe requests also need `X-CSRF-Token` = HMAC-SHA256(session token), compared by hash in constant time (403 `csrf_failed`). `GET /api/auth/session` returns it again after a page reload. No CORS anywhere; the Vite dev proxy keeps the browser's Host (`changeOrigin: false`), so development is same-origin too.
+- **Protection by default:** public routes are an exact allow-list in `app/main.py` (`GET /api/health`, `POST /api/auth/login`, `GET /api/auth/session`). Every other router is built with `protected_router()`, whose router-level dependency requires the session and CSRF. `tests/auth/test_route_protection.py` walks the effective dependency tree (router and include levels, recursively) of **every** route of the application, under `/api` or not, and fails for any gap; the only exemptions are the public allow-list, the development docs and the static mount named `frontend`. It is itself tested against deliberately unprotected routes (with and without the `/api` prefix), a second static mount and WebSocket routes: the application is HTTP-only, so any route without HTTP methods is reported (the allow-list for them is empty).
+- **Fail closed:** the web app never creates the database. A missing or not fully migrated database answers 503 on everything that needs it; no administrator means every protected route answers 401. Settings refuse any non-loopback `THERAPY_HOST` (no LAN access until a validated TLS setup exists); `python -m app.cli serve` binds to that host only.
+- **Transactions:** one session per request (`DbSession`). GET/HEAD use a deferred `BEGIN` with `PRAGMA query_only=ON`; other methods use `BEGIN IMMEDIATE`. The dependency is `scope="function"`, so the commit happens before the response is sent and a failed commit becomes a 500; any exception, including an `HTTPException`, rolls the whole request back. Session validation runs before the route, in its own read-only transaction plus the optional best-effort `last_seen_at` write (see Sessions). A failed login is *returned* (not raised) so its counter is committed.
+- **Privacy:** error bodies are `{"code": …}`; validation errors list only location and message (never the submitted value); unexpected errors return `internal_error` + a request id and are logged by exception type only — an outermost `CrashGuard` middleware (`app/errors.py`) answers them itself so that nothing propagates to uvicorn, which would otherwise log the traceback *with the exception message*; if the response had already started the connection is aborted with a message-free `ResponseAborted`; a bare process-control exception (KeyboardInterrupt, SystemExit, cancellation) propagates untouched, and a `BaseExceptionGroup` mixing ordinary and process-control exceptions is reduced to one process-control leaf (ordinary members logged by type only and dropped, no context chain) so that no message reaches uvicorn; SQL errors never contain bound values (`hide_parameters=True`). Audit entries carry ids and counts only (`admin.created`, `admin.password_changed`, `auth.login`, `auth.logout`, `auth.lockout`, `auth.sessions_revoked`). Headers: `X-Content-Type-Options`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, COOP/CORP `same-origin`, `Permissions-Policy`; `/api` adds `Cache-Control: no-store` and `CSP default-src 'none'`; the frontend gets a `'self'`-only CSP.
+
+### 5.11 Future: prescription-text extraction (R-RX-6, not built)
 `prescriptions/extraction.py` defines one interface: `extract(text) -> ProposedPrescription`, returning exactly the fields of manual entry — prescription number, decision number/date, validity, per therapy the EOPYY code, monthly quantity, printed total/duration, and the monthly referral windows and numbers — each with a "needs review" flag, plus the detected `layout`. Unknown layouts return nothing rather than a guess. The MVP ships no implementation. The flow is designed so extraction only ever produces a **draft**: proposed values go into `prescription_extractions`, the administrator reviews and corrects them in the same form used for manual entry, and saving creates an ordinary `prescriptions` row with `source = extracted` and a link to the extraction. No other part of the system changes. Whether an extractor may run locally only or call an external service is an open privacy decision (Q-07).
 
 ## 6. Reuse of the spike
@@ -173,14 +186,21 @@ Unit tests for pure modules (scheduler incl. property tests and golden holiday l
 
 | # | Milestone | Done when |
 |---|---|---|
-| M0 | **Done, awaiting review.** Repo hygiene + scaffolding: anchored `.gitignore`, pre-commit data guard, backend/frontend skeletons, config, synthetic fixture builder | Fresh clone runs `pytest`, `ruff`, `npm test` and `npm run build` with no private files (see `README.md`) |
-| M1 | **Done, awaiting review.** DB foundation: models, migrations, triggers, `db init/upgrade/status/check` | Constraint/trigger tests pass; migration round-trip; failed migration rolls back; fresh database initialises |
-| M2 | **Done, awaiting review.** Document engine port + gates + file store | Parity tests and LibreOffice end-to-end pass |
-| M3 | **Done, awaiting review.** Scheduling engine + services + database guards | Rule, randomised and holiday tests pass; deterministic |
-| M4 | **Done, awaiting review.** Template library backend + mapping assistant | Upload → map → validate → activate; duplicates refused; versions kept; exact matching |
-| M5 | Admin login + audit log | Login, lockout, audit entries, no personal data in logs |
-| M6 | Patients, prescriptions (manual) with monthly referral periods + pre-fill rule, therapists, assignments, matching | Registration flow incl. no-match handling; pre-fill reproduces the example prescription's six windows (16/09–15/10 … 16/02–15/03); month-arithmetic edge cases tested |
-| M7 | Document periods from referral windows + schedule proposal/edit/approve + home visits | Workflow and lock tests; misaligned windows reported; a referral period cannot be documented twice |
-| M8 | Preview, issue, correction, history, integrity check | End-to-end: register → prescribe → period → schedule → preview → issue → correct |
+| M0 | **Done (committed).** Repo hygiene + scaffolding: anchored `.gitignore`, pre-commit data guard, backend/frontend skeletons, config, synthetic fixture builder | Fresh clone runs `pytest`, `ruff`, `npm test` and `npm run build` with no private files (see `README.md`) |
+| M1 | **Done (committed).** DB foundation: models, migrations, triggers, `db init/upgrade/status/check` | Constraint/trigger tests pass; migration round-trip; failed migration rolls back; fresh database initialises |
+| M2 | **Done (committed).** Document engine port + gates + file store | Parity tests and LibreOffice end-to-end pass |
+| M3 | **Done (committed).** Scheduling engine + services + database guards | Rule, randomised and holiday tests pass; deterministic |
+| M4 | **Done (committed).** Template library backend + mapping assistant | Upload → map → validate → activate; duplicates refused; versions kept; exact matching |
+| M5 | Administration and prescriptions, in steps (no step changes an earlier one's guarantees): | |
+| M5.0 | **Done, awaiting review.** Authentication and API foundations: CLI-only administrator, Argon2id, server-side sessions (`0003_admin_sessions`), login backoff, CSRF + Origin/Host checks, request-scoped transactions, fail-closed guards, security headers, privacy-safe errors (§5.10) | Every API route is protected or on an exact public allow-list (structural test); nothing secret or personal in logs, audit entries or error bodies |
+| M5.1 | Reference data: therapy types (code, name, template label, optional editable EOPYY code — nothing seeded) and therapists; deactivate, never delete | Duplicates answer 409; deactivated records kept |
+| M5.2 | Patients: create, update, list, retrieve; AMKA exactly 11 digits; masked in lists; deactivate only | A list never contains a full AMKA |
+| M5.3 | Therapist assignments with history; advisory exact-template warning | Reassignment keeps history |
+| M5.4 | Prescriptions and referral periods (draft): explicit quantities and windows; read-only window suggestions | The server never fills in a quantity |
+| M5.5 | Confirmation and lifecycle: confirm (warnings for missing numbers), unconfirm if unused, delete drafts only | "Confirmed" never implies EOPYY approval |
+| M5.6 | Patient history and referral-period queries for M6 | — |
+| M5.7 | Hardening: audit completeness, privacy tests, docs | — |
+| M6 | Document periods from referral windows + schedule proposal/edit/approve + home visits | Workflow and lock tests; misaligned windows reported; a referral period cannot be documented twice |
+| M7 | Preview, issue, correction, history, integrity check | End-to-end: register → prescribe → period → schedule → preview → issue → correct |
 | F1–F3 | Frontend: management screens; template library; monthly flow + history | Administrator completes the monthly flow in a few steps |
-| M9 | Backup/restore, deployment notes, acceptance with a real center template | Restore test passes; real template preserved |
+| M8 | Backup/restore, deployment notes, acceptance with a real center template | Restore test passes; real template preserved |

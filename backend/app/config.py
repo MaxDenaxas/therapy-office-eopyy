@@ -19,6 +19,9 @@ def default_data_dir() -> Path:
     return Path.home() / ".local" / "share" / "therapy-office"
 
 
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
 def _inside_git_repository(path: Path) -> bool:
     return any((p / ".git").exists() for p in [path, *path.parents])
 
@@ -39,6 +42,19 @@ class Settings(BaseSettings):
     @property
     def database_path(self) -> Path:
         return self.data_dir / "therapy.db"
+
+    @field_validator("host")
+    @classmethod
+    def host_is_loopback(cls, value: str) -> str:
+        """Loopback only (D-29). LAN access would need a validated TLS setup, which does not
+        exist yet, so any other address is refused outright."""
+        host = value.strip().lower().removeprefix("[").removesuffix("]")
+        if host not in LOOPBACK_HOSTS:
+            raise ValueError(
+                "host must be a loopback address (127.0.0.1, localhost or ::1); "
+                "network access is not supported"
+            )
+        return host
 
     @field_validator("data_dir")
     @classmethod

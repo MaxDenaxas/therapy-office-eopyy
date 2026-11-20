@@ -10,7 +10,7 @@ these inside ``app.db.session_scope`` so a failure rolls everything back.
 
 A schedule is a plan (D-08). Fewer planned dates than authorized is allowed while
 editing but reported as incomplete; approving it needs ``allow_incomplete=True``, which
-is audited. Whether an incomplete schedule may ever be *issued* is Q-03 (decided in M8).
+is audited. Whether an incomplete schedule may ever be *issued* is Q-03 (decided in M7).
 A therapy with zero dates can never be approved (D-24).
 """
 
@@ -374,7 +374,7 @@ def reopen_schedule(session: Session, period_id: int) -> ScheduleStatus:
     if period.status != APPROVED:
         raise ScheduleLocked(
             f"document period {period_id} is {period.status}; only an approved "
-            "schedule can be reopened here (issued periods: see corrections, M8)"
+            "schedule can be reopened here (issued periods: see corrections, M7)"
         )
     period.status = DRAFT
     session.flush()

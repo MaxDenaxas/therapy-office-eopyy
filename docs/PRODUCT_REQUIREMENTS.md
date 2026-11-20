@@ -1,6 +1,6 @@
 # Product Requirements
 
-Status: draft for review (2026-11-20).
+Status: living document — updated 2026-11-20. Items marked open or awaiting review below are still unresolved.
 This file says *what* the application must do. `ARCHITECTURE.md` says *how*; `DECISIONS.md` records *why* and what is still open.
 
 ## 1. Purpose
