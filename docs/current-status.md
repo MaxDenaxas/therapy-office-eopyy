@@ -1,12 +1,39 @@
 # Current status
 
-Updated 2026-11-20. Roadmap: `ARCHITECTURE.md` §8. Decisions: `DECISIONS.md`.
+Updated 2026-11-21. Roadmap: `ARCHITECTURE.md` §8. Decisions: `DECISIONS.md`.
 
 ## Milestones
 
-- **M0–M4 committed** (`aa46d3b`); **M5.0 committed** (`33e4958`): authentication and API foundations, after two rounds of security review.
-- **M5.1 Reference data (therapy types and therapists): implemented, awaiting review. Not committed.** Details: `ARCHITECTURE.md` §5.12, D-34/D-35, P-54–P-56.
-- **Next: M5.2 (patients).** Do not start until explicitly instructed. M5.3–M5.7 follow (see roadmap).
+- **M0–M4 committed** (`aa46d3b`); **M5.0 committed** (`33e4958`); **M5.1 committed** (`2a20cd3`).
+- **M5.2 Patients: implemented, awaiting review. Not committed.** Details: `ARCHITECTURE.md` §5.14, D-36–D-42.
+- **Next: M5.3 (therapist assignments).** Do not start until explicitly instructed. M5.4–M5.7 follow.
+
+## Latest verified results (M5.2, run in the implementation session)
+
+| Check | Result |
+|---|---|
+| Backend pytest, full suite | 1304 passed, 0 failed, 0 skipped (1016 before M5.2 + 288 new, incl. the review fixes) |
+| ruff check and format | clean (128 files) |
+| `check_repo.py --staged`, `--all`, `--history` | passed (plus the guard's checks run over the 18 untracked new files: no problems) |
+| Spike `test_spike.py` | 27 passed |
+| Frontend | not run (no frontend file changed) |
+
+## M5.2 in short
+
+- Migration `0005_patient_guards`: one trigger (`patients_no_delete`), no table change. API: `/api/patients` (list, search via POST body, create, get, patch, AMKA correction, activate, deactivate; no DELETE), all protected.
+- Lists and search results never contain a full AMKA (`PatientSummary` has no `amka` field). Search runs in a read-only transaction (`ReadDbSession`); a lock-contention test with a stale `last_seen_at` shows it answers while another connection holds `BEGIN IMMEDIATE`. `app.cli serve` turns off uvicorn's access log.
+- Review fixes applied: lone surrogates refused (422, was a 500); list/search default to active patients (`active=false` for inactive); names need at least one letter (any script); the service's unknown-field error names no field.
+- Open points: M5.3/M5.4/M6 must refuse new assignments, prescriptions and periods for inactive patients (D-41); M7's preview hash must include the patient fields.
+- Known limitation (Decision W): names containing U+200C ZERO WIDTH NON-JOINER or U+200D ZERO WIDTH JOINER — used in some Persian and Indic spellings — are currently rejected with other Cf format characters. Supporting them between letters would require a separate explicit design decision.
+
+## Privacy follow-up: unknown JSON keys echoed in validation errors (NOT FIXED)
+
+Pre-existing, found during M5.2; **not fixed and not part of M5.2.** A request body with an unknown **key** gets a 422 whose `loc` contains that key (Pydantic `extra_forbidden`; `app/errors.py` passes `loc` through), and a key could be personal data such as an AMKA.
+
+- **Affected:** the M5.1 therapy-type and therapist endpoints (`/api/therapy-types`, `/api/therapists`) and the M5.0 **public** `POST /api/auth/login`.
+- **Not affected:** the patient routes. Their request schemas refuse unknown keys without naming them.
+- **Recommended fix:** central, in `app/errors.py`: drop the last `loc` element of `extra_forbidden` errors before the 6-element cut. The response shape and message stay unchanged. It needs regression tests on every affected route.
+- **Status:** a separate privacy-hardening follow-up, **awaiting explicit approval**.
 
 ## Latest verified results (M5.1, run in the implementation session)
 

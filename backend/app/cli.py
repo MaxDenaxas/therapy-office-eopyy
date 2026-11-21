@@ -218,6 +218,7 @@ def _serve(reload: bool) -> int:
         log_level=settings.log_level.lower(),
         proxy_headers=False,  # no proxy in front: never trust X-Forwarded-*
         server_header=False,
+        access_log=False,  # request lines include query strings: never log them (M5.2)
     )
     return 0
 

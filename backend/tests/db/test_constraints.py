@@ -21,11 +21,15 @@ def test_foreign_keys_are_enforced(session):
 
 
 def test_referenced_rows_cannot_be_deleted(session):
+    # patients have their own no-delete trigger (0005, tests/patients/test_migration_0005.py),
+    # which fires before the foreign key check; a therapy type shows the FK rule itself
     pat = f.patient(session)
-    f.prescription(session, pat, D(2025, 9, 16), D(2026, 3, 15))
+    tt = f.therapy_type(session, "speech", "Λογοθεραπεία:")
+    rx = f.prescription(session, pat, D(2025, 9, 16), D(2026, 3, 15))
+    f.item(session, rx, tt, 8)
     session.commit()
     with rejected(session, "FOREIGN KEY constraint failed"):
-        session.execute(text("DELETE FROM patients WHERE id = :id"), {"id": pat.id})
+        session.execute(text("DELETE FROM therapy_types WHERE id = :id"), {"id": tt.id})
 
 
 def test_every_foreign_key_restricts_delete():

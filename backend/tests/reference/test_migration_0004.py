@@ -59,4 +59,6 @@ def test_a_database_with_active_data_upgrades_cleanly(tmp_path):
     con.commit()
     con.close()
     migrate.upgrade(path, "0004")
+    assert migrate.current_revision(path) == "0004"
+    migrate.upgrade(path)  # check() also requires the latest revision (0005 since M5.2)
     assert migrate.check(path) == []

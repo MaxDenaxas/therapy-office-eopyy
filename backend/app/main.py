@@ -1,7 +1,9 @@
 """Application factory.
 
 Run (development):  python -m app.cli serve --reload
-                    (or: uvicorn app.main:create_app --factory --reload --host 127.0.0.1)
+                    (or: uvicorn app.main:create_app --factory --reload --host 127.0.0.1
+                     --no-access-log — the access log would record query strings; never use
+                     --log-level trace, which logs whole request scopes including cookies)
 
 Routing: public routes are listed explicitly (``PUBLIC_API_ROUTES``); every other
 API router is created with ``protected_router()`` and therefore requires the
@@ -18,7 +20,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
-from app.api import auth, health, reference
+from app.api import auth, health, patients, reference
 from app.api.deps import Database, utc_now
 from app.config import Settings, get_settings
 from app.errors import install_crash_guard, install_error_handlers
@@ -69,6 +71,7 @@ def create_app(
     app.include_router(auth.protected, prefix="/api")
     app.include_router(reference.therapy_types, prefix="/api")
     app.include_router(reference.therapists, prefix="/api")
+    app.include_router(patients.patients, prefix="/api")
 
     # Serve the built frontend (one process, one port). Mounted last so /api wins.
     if settings.frontend_dist is not None:

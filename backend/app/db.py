@@ -16,6 +16,11 @@ lock and SQLite itself refuses any write attempted inside it.
 
 ``hide_parameters=True``: SQL errors never carry bound values (AMKA, names,
 password hashes) into exception messages or logs.
+
+Every connection also gets the deterministic SQL function ``therapy_fold(text)``
+(``app.text.therapy_fold``, M5.2), used by patient search and duplicate detection.
+It must never appear in a trigger, CHECK or index: the database has to stay usable
+from tools that do not define it.
 """
 
 from __future__ import annotations
@@ -26,6 +31,8 @@ from pathlib import Path
 
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
+
+from app.text import therapy_fold
 
 DEFAULT_BUSY_TIMEOUT_MS = 5000
 PRAGMAS: tuple[tuple[str, str], ...] = (
@@ -54,6 +61,7 @@ def make_engine(path: Path) -> Engine:
         for name, value in PRAGMAS:
             cursor.execute(f"PRAGMA {name}={value}")
         cursor.close()
+        dbapi_connection.create_function("therapy_fold", 1, therapy_fold, deterministic=True)
 
     @event.listens_for(engine, "begin")
     def _on_begin(connection) -> None:

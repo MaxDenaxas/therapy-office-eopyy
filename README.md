@@ -34,6 +34,8 @@ ruff check . && ruff format --check .       # lint
 python -m app.cli serve --reload            # binds to THERAPY_HOST (loopback only)
 ```
 
+`app.cli serve` turns uvicorn's access log off: request lines contain query strings. If you start uvicorn by hand, pass `--no-access-log` and never use `--log-level trace` (it logs whole request scopes, cookies included).
+
 Configuration is read from `THERAPY_*` environment variables or a git-ignored `backend/.env` (see `backend/.env.example`). `THERAPY_DATA_DIR` must be **outside** this repository; the application refuses to start otherwise.
 
 ### Database (SQLite at `THERAPY_DATA_DIR/therapy.db`)

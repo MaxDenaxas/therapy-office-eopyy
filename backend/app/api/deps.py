@@ -7,7 +7,7 @@ needs it answers 503 (fail closed). ``python -m app.cli db init`` creates it.
 Transactions
   * ``DbSession`` is one session per request. GET/HEAD get a read-only session
     (deferred BEGIN + ``query_only``); other methods get a write session
-    (``BEGIN IMMEDIATE``).
+    (``BEGIN IMMEDIATE``). ``ReadDbSession`` is read-only for any method (M5.2).
   * The dependency uses ``scope="function"``: it commits right after the route
     function returns and *before* the response is sent, so a failed commit
     becomes a 500 instead of a silently lost write. Any exception, including an
@@ -138,9 +138,8 @@ def get_clock(request: Request) -> Callable[[], datetime]:
     return request.app.state.clock
 
 
-def get_db(request: Request) -> Iterator[Session]:
+def _request_session(request: Request, read_only: bool) -> Iterator[Session]:
     database = get_database(request)
-    read_only = request.method in SAFE_METHODS
     session = database.factory(read_only)()
     try:
         yield session
@@ -155,4 +154,35 @@ def get_db(request: Request) -> Iterator[Session]:
         session.close()
 
 
+def get_db(request: Request) -> Iterator[Session]:
+    yield from _request_session(request, request.method in SAFE_METHODS)
+
+
+def get_read_db(request: Request) -> Iterator[Session]:
+    """A read-only session whatever the method (M5.2: ``POST /api/patients/search``, whose
+    personal search values must travel in a body). Deferred ``BEGIN`` + ``query_only``: it never
+    takes the write lock, and SQLite refuses any write inside it. The session is created lazily,
+    so nothing is locked before the route's first statement either way; what decides the lock is
+    the engine the session is bound to. A route using it must not also use ``get_db`` anywhere in
+    its dependency tree (that session would take ``BEGIN IMMEDIATE``): a structural test
+    (tests/auth/test_read_sessions.py) enforces this. Authentication, CSRF and the request filter
+    are unaffected (they do not depend on this session)."""
+    yield from _request_session(request, True)
+
+
 DbSession = Annotated[Session, Depends(get_db, scope="function")]
+ReadDbSession = Annotated[Session, Depends(get_read_db, scope="function")]
+
+
+def allow_query(*names: str) -> Callable[[Request], None]:
+    """A route dependency refusing unknown or repeated query parameters with
+    ``422 unknown_query_parameter``. The parameter names are never echoed: a name could itself be
+    personal data. Personal search values are accepted only in POST bodies (M5.2, decision T)."""
+    allowed = frozenset(names)
+
+    def check_query(request: Request) -> None:
+        keys = [key for key, _ in request.query_params.multi_items()]
+        if len(keys) != len(set(keys)) or not set(keys) <= allowed:
+            raise ApiError(422, "unknown_query_parameter")
+
+    return check_query

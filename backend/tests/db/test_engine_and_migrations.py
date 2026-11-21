@@ -76,6 +76,7 @@ EXPECTED_TRIGGERS = {
     "therapy_types_keep_active_templates",
     "therapists_keep_active_templates",
     "therapists_identity_frozen",
+    "patients_no_delete",  # 0005
 }
 
 

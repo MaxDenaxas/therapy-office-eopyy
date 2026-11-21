@@ -732,3 +732,31 @@ def test_match_for_patient_refuses_an_inactive_record(session, center, booked, r
     _force_inactive(session, center, record)
     with pytest.raises(NoMatchingTemplate, match="is inactive"):
         match_for_patient(session, center.store, booked.patient.id)
+
+
+# ---------------------------------------------------------------- M5.2: semantics pinned
+def test_m51_duplicate_name_semantics_are_unchanged_by_the_patient_fold(session):
+    """M5.2 added ``app.text.therapy_fold`` for patients (hyphens and punctuation become word
+    separators). The reference-data fold must keep its M5.1 behaviour: case, accents and spacing
+    are ignored, but a hyphen is part of the name."""
+    assert svc._fold("Άννα  ΜΑΡΊΑ ") == svc._fold("άννα μαρία")
+    assert svc._fold("Άννα-Μαρία") != svc._fold("Άννα Μαρία")
+    first = svc.create_therapist(session, {"full_name": "Άννα-Μαρία Δοκιμής"}).item
+    hyphen_vs_space = svc.create_therapist(session, {"full_name": "Άννα Μαρία Δοκιμής"})
+    assert hyphen_vs_space.warnings == []
+    same = svc.create_therapist(session, {"full_name": "ΑΝΝΑ-ΜΑΡΙΑ  δοκιμής"})
+    assert [(w.code, w.ids) for w in same.warnings] == [("duplicate_full_name", (first.id,))]
+
+
+def test_m51_audit_entries_are_unchanged_by_the_shared_helper(session):
+    row = svc.create_therapy_type(
+        session, {"code": "pin", "name_el": "Α", "template_label": "Α:"}
+    ).item
+    svc.update_therapy_type(session, row.id, {"name_el": "Β"})
+    entries = session.execute(
+        text("SELECT action, entity, entity_id, details FROM audit_log ORDER BY id")
+    ).all()
+    assert [tuple(e) for e in entries] == [
+        ("therapy_type.created", "therapy_types", row.id, None),
+        ("therapy_type.updated", "therapy_types", row.id, json.dumps({"fields": ["name_el"]})),
+    ]

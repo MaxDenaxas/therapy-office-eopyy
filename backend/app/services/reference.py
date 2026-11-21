@@ -21,7 +21,6 @@ additive code-mapping table; nothing here prevents that).
 
 from __future__ import annotations
 
-import json
 import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -32,7 +31,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import (
-    AuditLog,
     DocumentTemplate,
     PeriodTherapy,
     PrescriptionItem,
@@ -41,6 +39,7 @@ from app.models import (
     TherapistAssignment,
     TherapyType,
 )
+from app.services.audit import record_audit
 
 THERAPY_TYPE_FIELDS = frozenset(
     {"code", "name_el", "template_label", "eopyy_code", "eopyy_description", "supports_home_visit"}
@@ -101,15 +100,7 @@ def _clean(changes: Mapping[str, Any], allowed: frozenset[str], required: frozen
     return cleaned
 
 
-def _audit(session: Session, action: str, entity: str, entity_id: int, **details) -> None:
-    session.add(
-        AuditLog(
-            action=action,
-            entity=entity,
-            entity_id=entity_id,
-            details=json.dumps(details, sort_keys=True, default=str) if details else None,
-        )
-    )
+_audit = record_audit  # shared writer (services/audit.py), unchanged behaviour
 
 
 _INTEGRITY_MESSAGES = (
