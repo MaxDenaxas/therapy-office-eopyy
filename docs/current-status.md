@@ -26,14 +26,15 @@ Updated 2026-11-21. Roadmap: `ARCHITECTURE.md` §8. Decisions: `DECISIONS.md`.
 - Open points: M5.3/M5.4/M6 must refuse new assignments, prescriptions and periods for inactive patients (D-41); M7's preview hash must include the patient fields.
 - Known limitation (Decision W): names containing U+200C ZERO WIDTH NON-JOINER or U+200D ZERO WIDTH JOINER — used in some Persian and Indic spellings — are currently rejected with other Cf format characters. Supporting them between letters would require a separate explicit design decision.
 
-## Privacy follow-up: unknown JSON keys echoed in validation errors (NOT FIXED)
+## Privacy follow-up: unknown JSON keys echoed in validation errors (FIXED, not yet committed)
 
-Pre-existing, found during M5.2; **not fixed and not part of M5.2.** A request body with an unknown **key** gets a 422 whose `loc` contains that key (Pydantic `extra_forbidden`; `app/errors.py` passes `loc` through), and a key could be personal data such as an AMKA.
+**History.** Pre-existing (M5.0/M5.1), found during the M5.2 review and not part of M5.2. A request body with an unknown **key** got a 422 whose `loc` contained that key (Pydantic `extra_forbidden`; `app/errors.py` passed `loc` through), and a key could be personal data such as an AMKA. It affected the M5.1 therapy-type and therapist endpoints (`/api/therapy-types`, `/api/therapists`) and the M5.0 **public** `POST /api/auth/login`; the patient routes were not affected (their request schemas refuse unknown keys without naming them).
 
-- **Affected:** the M5.1 therapy-type and therapist endpoints (`/api/therapy-types`, `/api/therapists`) and the M5.0 **public** `POST /api/auth/login`.
-- **Not affected:** the patient routes. Their request schemas refuse unknown keys without naming them.
-- **Recommended fix:** central, in `app/errors.py`: drop the last `loc` element of `extra_forbidden` errors before the 6-element cut. The response shape and message stay unchanged. It needs regression tests on every affected route.
-- **Status:** a separate privacy-hardening follow-up, **awaiting explicit approval**.
+**Fix (implemented, awaiting commit).** Central, in `backend/app/errors.py` (`_safe_loc`): for `extra_forbidden` errors the last `loc` element, the unexpected key, is dropped *before* the existing 6-element cut, so `["body", "<key>"]` becomes `["body"]`. The response shape, status, messages, the 20-error cap and the locations of every other error (known fields, missing fields, query, path, JSON decode) are unchanged; no request schema changed.
+
+**Tests.** `backend/tests/auth/test_validation_key_privacy.py` (13 tests): synthetic AMKA and Greek-name keys on therapy types and therapists (POST and PATCH), the public login and the patient routes (their own protection, unchanged) are never echoed and give `["body"]`; known-field errors keep their location; nested keys, deep locations and the error cap are covered through test-only routes. Run against the old behaviour, 8 of them fail. Full backend suite with the fix: **1317 passed**, 0 failed; ruff, `check_repo.py --all`/`--history` and the 27 spike tests pass.
+
+**Status.** Implemented and verified, **not yet committed**. Remaining caveat: the guarantee covers keys as error *locations*. A future request model with a free-form `dict[str, X]` field could still put a client key in `loc` when a *value* fails validation; no schema has one today.
 
 ## Latest verified results (M5.1, run in the implementation session)
 

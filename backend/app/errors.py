@@ -2,7 +2,8 @@
 
 Every error body is ``{"code": "..."}`` (plus fixed, non-personal fields). Nothing
 from the request is echoed: validation errors list only where and what (location
-and message), never the submitted value; unexpected errors carry a request id and
+and message), never the submitted value — nor an unexpected key, which is dropped
+from the location of ``extra_forbidden`` errors; unexpected errors carry a request id and
 are logged by exception type only, because exception messages may contain data.
 """
 
@@ -60,11 +61,19 @@ async def _http_error(_request: Request, exc: StarletteHTTPException) -> JSONRes
     return JSONResponse(body, status_code=exc.status_code, headers=exc.headers)
 
 
+def _safe_loc(err: dict) -> list[str]:
+    """The error location, without client-supplied parts. For ``extra_forbidden`` the last
+    element is the unexpected key itself — client data that could be an AMKA or a name — so it
+    is dropped (the location of the object that refused it remains). Dropped *before* the length
+    cut, so a deep location keeps its declared parts."""
+    loc = [str(part) for part in err.get("loc", ())]
+    if err.get("type") == "extra_forbidden" and loc:
+        loc = loc[:-1]
+    return loc[:6]
+
+
 async def _validation_error(_request: Request, exc: RequestValidationError) -> JSONResponse:
-    errors = [
-        {"loc": [str(part) for part in err.get("loc", ())][:6], "msg": str(err.get("msg", ""))}
-        for err in exc.errors()
-    ]
+    errors = [{"loc": _safe_loc(err), "msg": str(err.get("msg", ""))} for err in exc.errors()]
     return JSONResponse({"code": "validation_error", "errors": errors[:20]}, status_code=422)
 
 
