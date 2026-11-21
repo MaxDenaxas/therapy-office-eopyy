@@ -18,7 +18,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
-from app.api import auth, health
+from app.api import auth, health, reference
 from app.api.deps import Database, utc_now
 from app.config import Settings, get_settings
 from app.errors import install_crash_guard, install_error_handlers
@@ -67,6 +67,8 @@ def create_app(
     app.include_router(health.router, prefix="/api")
     app.include_router(auth.public, prefix="/api")
     app.include_router(auth.protected, prefix="/api")
+    app.include_router(reference.therapy_types, prefix="/api")
+    app.include_router(reference.therapists, prefix="/api")
 
     # Serve the built frontend (one process, one port). Mounted last so /api wins.
     if settings.frontend_dist is not None:

@@ -522,6 +522,17 @@ def match_template(session: Session, store: FileStore, pairs: Iterable[Pair]) ->
         raise NoMatchingTemplate(
             f"template {template.name!r} has an inconsistent configuration; it cannot be used"
         )
+    # An active template is not enough: its therapies and therapists must be active *now*
+    # (M5.1 forbids deactivating them under an active template, but never rely on that alone).
+    inactive = [
+        f"therapy {tt.name_el!r}"
+        for tt_id, _ in pairs
+        if not (tt := session.get(TherapyType, tt_id)).active
+    ] + [f"therapist #{th_id}" for _, th_id in pairs if not session.get(Therapist, th_id).active]
+    if inactive:
+        raise NoMatchingTemplate(
+            f"template {template.name!r} cannot be used: " + ", ".join(inactive) + " is inactive"
+        )
     version = session.get(TemplateVersion, template.current_version_id)
     if version is None or version.validation_status != "valid":
         raise NoMatchingTemplate(f"template {template.name!r} has no valid current version")

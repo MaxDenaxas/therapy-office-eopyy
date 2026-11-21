@@ -4,28 +4,43 @@ Updated 2026-11-20. Roadmap: `ARCHITECTURE.md` §8. Decisions: `DECISIONS.md`.
 
 ## Milestones
 
-- **M0–M4 done and committed** (`aa46d3b` on `main`): scaffolding and repository guard, database, document engine, scheduling, template library.
-- **M5.0 Authentication and API foundations: done, awaiting review. Not committed** (changes are in the working tree). A source-level security review found three Medium and several Low findings; the three Medium ones and one Low (re-login) are fixed (see below); the remaining Low findings are open.
-- **Next: M5.1 (reference data).** Do not start until explicitly instructed. M5.2–M5.7 follow (see roadmap).
+- **M0–M4 committed** (`aa46d3b`); **M5.0 committed** (`33e4958`): authentication and API foundations, after two rounds of security review.
+- **M5.1 Reference data (therapy types and therapists): implemented, awaiting review. Not committed.** Details: `ARCHITECTURE.md` §5.12, D-34/D-35, P-54–P-56.
+- **Next: M5.2 (patients).** Do not start until explicitly instructed. M5.3–M5.7 follow (see roadmap).
 
-## Latest verified results for M5.0 (run in the implementation session)
+## Latest verified results (M5.1, run in the implementation session)
 
 | Check | Result |
 |---|---|
-| Backend pytest, full suite | 817 passed, 0 failed, 0 skipped (after the second round of review fixes; 762 before any review fix) |
-| Frontend typecheck / `npm test` / build | OK / 4 passed / OK |
-| Spike `test_spike.py` | 27 passed |
+| Backend pytest, full suite | 1016 passed, 0 failed, 0 skipped (822 before M5.1 + 194 new, incl. the audit follow-ups) |
 | ruff check and format | clean |
 | `check_repo.py --all` and `--history` | passed |
+| Spike `test_spike.py` | 27 passed |
+| Frontend | not rerun (no frontend file changed in M5.1); M5.0 results: typecheck/build OK, 4 tests passed |
 
-The frontend, spike and repository-guard results are from the implementation session (the review fixes touched no frontend or spike file; the spike tests and guard were rerun after the fixes and passed). Before the review fixes, only a comment, an empty `__init__.py`, the FastAPI version floor in `pyproject.toml` and documentation changed; affected subsets were rerun and passed. The documentation-only task that created this file did not rerun any suite.
+## M5.1 in short
+
+- Migration `0004_reference_data_guards`: four triggers, no table change. API: `/api/therapy-types` and `/api/therapists` (list, create, get, patch, activate, deactivate; no DELETE), all protected.
+- A therapy type or therapist used by an active template cannot be deactivated; therapist identity fields cannot change while an active template uses them; a therapy type's `code` is immutable once referenced; template matching refuses inactive types/therapists.
+- Duplicate therapist names / licence numbers and duplicate therapy-type names are warnings.
+- Open points for later milestones: whether M5.3/M6 services must also refuse inactive therapists/types (planned: yes); Q-05 (therapist change mid-period); U-05 (several EOPYY codes per therapy type, additive mapping table if needed). The permanent OCR/AI requirement is recorded as D-35.
+
+## Required before the F2 template-library screens: a Template Management API
+
+A **protected Template Management API must be implemented before the F2 template-library frontend screens.** It should support listing templates, registering templates, uploading new template versions, activating templates and deactivating templates, built on the existing `app/services/templates.py` lifecycle (no parallel workflow), on `protected_router()`, with the same conventions as M5.1 (JSON bodies rejecting unknown fields, stable error codes, audit entries with ids only, upload size/type limits from P-30). It is **not** part of M5.1 and is not yet scheduled as its own M5.x step: it must be planned before F2.
+
+Until then there is **no HTTP or command-line way to manage templates**: `python -m app.cli` has only the `db`, `admin` and `serve` commands. Templates are managed by calling the Python services directly (`register_template`, `add_version`, `activate_template`, `deactivate_template` in `app/services/templates.py`; the tests under `backend/tests/templates/` show the calls). The M5.1 errors that say "deactivate the template first" therefore describe the Python workflow until that API exists.
+
+## Accepted raw-database inconsistency (M5.1 audit)
+
+The database does not stop a raw write from switching a template back on while one of its therapists or therapy types is inactive (there is deliberately **no fifth trigger**). The authoritative paths refuse it: `activate_template` ("… is inactive") and `match_template` / `match_for_period` / `match_for_patient` (`NoMatchingTemplate`). Documented by a test, `test_a_raw_reactivation_of_a_template_with_an_inactive_record_is_allowed_but_never_matched`.
 
 ## Known limitations (M5.0)
 
 - A hand-started `uvicorn --host 0.0.0.0` cannot be refused at startup; non-loopback clients still get 403. Use `python -m app.cli serve`.
 - Anyone on the machine can lock the login for up to 15 min by failing it; `admin set-password` clears it.
 - Session lifetimes are constants, not settings. Individual failed logins are not audited (lockouts are).
-- Database constraint errors give a generic 500 until mapped to 409 (M5.1).
+- Database constraint errors outside the reference-data routes still give a generic 500 (M5.1 maps them for its own routes only).
 - No login screen yet (F1). Response-time equality for unknown usernames is not measured by a test.
 
 ## Open questions still relevant

@@ -72,6 +72,10 @@ EXPECTED_TRIGGERS = {
     "audit_log_no_delete",
     "center_settings_no_delete",
     "admin_sessions_fixed",  # 0003
+    "therapy_types_code_frozen",  # 0004
+    "therapy_types_keep_active_templates",
+    "therapists_keep_active_templates",
+    "therapists_identity_frozen",
 }
 
 
